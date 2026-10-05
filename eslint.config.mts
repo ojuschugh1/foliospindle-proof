@@ -19,6 +19,9 @@ export default defineConfig(
 		languageOptions: {
 			globals: {
 				...globals.browser,
+				__SDK_VERSION__: 'readonly',
+				__SDK_WASM_SHA256__: 'readonly',
+				__SHA256SUMS__: 'readonly',
 			},
 			parserOptions: {
 				projectService: {
