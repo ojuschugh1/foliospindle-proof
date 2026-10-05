@@ -1,0 +1,13 @@
+@eslint/js
+@siafoundation/sia-storage
+@types/node
+builtin-modules
+esbuild
+eslint
+eslint-plugin-obsidianmd
+globals
+jiti
+obsidian
+tslib
+typescript
+typescript-eslint
