@@ -1,0 +1,10 @@
+{
+	"id": "foliospindle-proof",
+	"name": "FolioSpindle Proof",
+	"version": "0.1.0",
+	"minAppVersion": "1.11.4",
+	"description": "Thin pre-application proof: single-file WASM packaging, direct indexer authorization, fixture round trip, and object event observation. Not a sync plugin.",
+	"author": "Ojus Chugh",
+	"authorUrl": "https://github.com/ojuschugh1",
+	"isDesktopOnly": false
+}
