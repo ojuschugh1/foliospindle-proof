@@ -39,6 +39,7 @@ export default defineConfig(
 		},
 		rules: {
 			'obsidianmd/no-nodejs-modules': 'off',
+			'obsidianmd/no-global-this': 'off',
 			'@typescript-eslint/no-floating-promises': [
 				'error',
 				{
