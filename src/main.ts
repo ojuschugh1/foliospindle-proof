@@ -1,4 +1,7 @@
 import { Notice, Platform, Plugin, type SecretStorage, TFile, TFolder, type Vault, apiVersion, normalizePath } from "obsidian";
+import { runCapability } from "./commands/capability.ts";
+import { runConnect } from "./commands/connect.ts";
+import { runRemoveCredential } from "./commands/remove-credential.ts";
 import type { CommandContext, PlatformInfo, SecretStore, VaultWriter } from "./context.ts";
 import { classify, osVersionFromUa } from "./platform.ts";
 import { type Redactor, createRedactor } from "./redaction.ts";
@@ -36,6 +39,27 @@ export default class FolioSpindleProofPlugin extends Plugin {
 		});
 		this.settings = settingsFrom((await this.loadData()) as Partial<PluginSettings> | null);
 		this.addSettingTab(new IndexerSettingTab(this.app, this));
+		this.addCommand({
+			id: "capability-check",
+			name: "Check runtime capability",
+			callback: () => {
+				void runCapability(this.context());
+			},
+		});
+		this.addCommand({
+			id: "connect",
+			name: "Connect to indexer",
+			callback: () => {
+				void runConnect(this.context());
+			},
+		});
+		this.addCommand({
+			id: "remove-credential",
+			name: "Remove stored credential",
+			callback: () => {
+				void runRemoveCredential(this.context());
+			},
+		});
 		this.onloadMs = clock() - t0;
 	}
 
