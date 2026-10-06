@@ -34,6 +34,12 @@ export default defineConfig(
 	},
 	...obsidianmd.configs.recommended,
 	{
+		files: ['src/settings-tab.ts'],
+		rules: {
+			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
+		},
+	},
+	{
 		files: ['tests/**/*.ts'],
 		languageOptions: {
 			globals: {
