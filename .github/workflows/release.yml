@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Check artifact
+        run: node scripts/check-artifact.mjs
+      - name: Check manifest version against the tag
+        run: |
+          node -e '
+            const { version } = JSON.parse(require("node:fs").readFileSync("manifest.json", "utf8"));
+            if (version !== process.env.TAG) {
+              console.error(`manifest.json version ${version} does not match tag ${process.env.TAG}`);
+              process.exit(1);
+            }
+          '
+      - name: Write checksums
+        run: shasum -a 256 main.js manifest.json > SHA256SUMS
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$TAG" main.js manifest.json SHA256SUMS --draft --title "$TAG" --notes "FolioSpindle Proof $TAG"
