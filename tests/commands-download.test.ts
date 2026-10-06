@@ -3,13 +3,15 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { PRIVATE_RELAY_HINT } from "../src/capability.ts";
 import { COMPLETE_NOTICE, type DownloadObjectResult, type DownloadResult, INCOMPLETE_NOTICE, NO_RECEIPT_NOTICE, runDownload } from "../src/commands/download.ts";
+import { ENTER_RECEIPT_TITLE, type EnterReceiptResult, RECEIPT_SAVED_NOTICE, runEnterReceipt } from "../src/commands/enter-receipt.ts";
 import type { PlatformClass } from "../src/context.ts";
 import { storeSeed } from "../src/credential.ts";
 import { utf8Decode, utf8Encode } from "../src/encoding.ts";
 import { FIXTURE_NAMES, type FixtureName, committedHashes, fixtureBytes } from "../src/fixtures.ts";
-import type { Receipt, ReceiptObject } from "../src/receipt.ts";
+import { type Receipt, type ReceiptObject, formatReceipt } from "../src/receipt.ts";
 import { type CommandRecord, type Outcome, PROOF_FOLDER, RECORDS_FOLDER } from "../src/records.ts";
 import type { ObjectHandle } from "../src/sdk-adapter.ts";
+import { DEFAULT_SETTINGS } from "../src/settings.ts";
 import { EPOCH_ISO, FakeClock, FakeSdk, type Harness, TEST_SEED, fakeContext } from "./fakes.ts";
 
 const OBJECT_IDS: Record<FixtureName, string> = { "fixture-a.md": "aa01", "fixture-b.md": "bb02", "attachment.bin": "cc03" };
@@ -367,4 +369,106 @@ test("a vault write failure is recorded as failedCall vault and the remaining ob
 		`createText:${RECORDS_FOLDER}/${STEM}.json`,
 	]);
 	assert.deepEqual(h.notices, [`Could not write ${fixturePath("fixture-a.md")}: File does not exist.`, INCOMPLETE_NOTICE]);
+});
+
+function enterHarness(answer: string | null, stored: Receipt | null = null): { h: Harness; sdk: FakeSdk } {
+	const h = fakeContext({ promptAnswers: [answer], settings: { receipt: stored } });
+	const sdk = h.session.stored;
+	assert.ok(sdk instanceof FakeSdk);
+	return { h, sdk };
+}
+
+async function enterReceipt(h: Harness): Promise<CommandRecord<EnterReceiptResult>> {
+	await runEnterReceipt(h.ctx);
+	return onlyRecord<EnterReceiptResult>(h);
+}
+
+function untouched(h: Harness, sdk: FakeSdk, label?: string): void {
+	assert.deepEqual(sdk.calls, [], label);
+	assert.deepEqual(h.secrets.calls, [], label);
+	assert.equal(h.session.initCalls, 0, label);
+	assert.deepEqual(h.session.connectStoredCalls, [], label);
+}
+
+test("a valid pasted receipt is saved into settings without touching the SDK or the credential", async () => {
+	const { h, sdk } = enterHarness(formatReceipt(receiptFor("ios")));
+	const record = await enterReceipt(h);
+	assert.equal(record.command, "enter-receipt");
+	assert.equal(record.outcome, "passed");
+	assert.equal(record.error, null);
+	assert.equal(record.init, null);
+	assert.equal(record.reconnect, null);
+	assert.deepEqual(record.result, { accepted: true, firstInvalidField: null, reason: null });
+	assert.deepEqual(h.prompts, [ENTER_RECEIPT_TITLE]);
+	assert.deepEqual(h.settings.saves, [{ ...DEFAULT_SETTINGS, receipt: receiptFor("ios") }]);
+	assert.deepEqual(h.settings.value.receipt, receiptFor("ios"));
+	assert.deepEqual(h.notices, [RECEIPT_SAVED_NOTICE]);
+	assert.deepEqual(h.shows, []);
+	untouched(h, sdk);
+	assert.deepEqual(nonRecordFiles(h), []);
+});
+
+test("whitespace and newlines around the pasted receipt still parse and save", async () => {
+	const { h, sdk } = enterHarness(`\n\n  ${formatReceipt(receiptFor("ios"))}\n\t \n`);
+	const record = await enterReceipt(h);
+	assert.equal(record.outcome, "passed");
+	assert.deepEqual(record.result, { accepted: true, firstInvalidField: null, reason: null });
+	assert.deepEqual(h.settings.value.receipt, receiptFor("ios"));
+	assert.deepEqual(h.notices, [RECEIPT_SAVED_NOTICE]);
+	untouched(h, sdk);
+});
+
+test("a valid receipt replaces the receipt already stored", async () => {
+	const { h, sdk } = enterHarness(formatReceipt(receiptFor("ios")), receiptFor("macos"));
+	const record = await enterReceipt(h);
+	assert.equal(record.outcome, "passed");
+	assert.deepEqual(h.settings.saves, [{ ...DEFAULT_SETTINGS, receipt: receiptFor("ios") }]);
+	assert.deepEqual(h.settings.value.receipt, receiptFor("ios"));
+	assert.deepEqual(h.notices, [RECEIPT_SAVED_NOTICE]);
+	untouched(h, sdk);
+});
+
+test("an invalid receipt is rejected naming its first invalid field and the stored receipt is unchanged", async () => {
+	const hashes = committedHashes();
+	const cases: [string, string, string, string][] = [
+		["not JSON", "{ not json", "", "not valid JSON"],
+		["format version", JSON.stringify({ ...receiptFor("ios"), formatVersion: 2 }), "formatVersion", "expected 1"],
+		["uppercase hash", JSON.stringify(withReceiptHash(receiptFor("ios"), "attachment.bin", hashes["attachment.bin"].toUpperCase())), "objects[2].sha256", "expected 64 lowercase hex characters"],
+		["unknown key", JSON.stringify({ ...receiptFor("ios"), note: "x" }), "note", "unknown key"],
+	];
+	for (const [label, text, path, reason] of cases) {
+		const { h, sdk } = enterHarness(text, receiptFor("macos"));
+		const record = await enterReceipt(h);
+		assert.equal(record.command, "enter-receipt", label);
+		assert.equal(record.outcome, "failed", label);
+		assert.equal(record.error?.step, "parseReceipt", label);
+		assert.equal(record.error?.kind, "error", label);
+		assert.equal(record.error?.message, `${path}: ${reason}`, label);
+		assert.deepEqual(record.result, { accepted: false, firstInvalidField: path, reason }, label);
+		assert.deepEqual(h.prompts, [ENTER_RECEIPT_TITLE], label);
+		assert.deepEqual(h.notices, [`Invalid receipt: ${path}: ${reason}`], label);
+		assert.deepEqual(h.shows, [], label);
+		assert.deepEqual(h.settings.saves, [], label);
+		assert.deepEqual(h.settings.value.receipt, receiptFor("macos"), label);
+		untouched(h, sdk, label);
+		assert.deepEqual(nonRecordFiles(h), [], label);
+	}
+});
+
+test("a cancelled receipt prompt is refused without a notice and leaves settings unchanged", async () => {
+	const { h, sdk } = enterHarness(null, receiptFor("macos"));
+	const record = await enterReceipt(h);
+	assert.equal(record.command, "enter-receipt");
+	assert.equal(record.outcome, "refused");
+	assert.deepEqual(record.error, { step: "prompt", kind: "refusal", message: "cancelled", transportHint: false });
+	assert.deepEqual(record.result, { accepted: false, firstInvalidField: null, reason: "cancelled" });
+	assert.equal(record.init, null);
+	assert.equal(record.reconnect, null);
+	assert.deepEqual(h.prompts, [ENTER_RECEIPT_TITLE]);
+	assert.deepEqual(h.notices, []);
+	assert.deepEqual(h.shows, []);
+	assert.deepEqual(h.settings.saves, []);
+	assert.deepEqual(h.settings.value.receipt, receiptFor("macos"));
+	untouched(h, sdk);
+	assert.deepEqual(nonRecordFiles(h), []);
 });

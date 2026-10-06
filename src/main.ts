@@ -2,6 +2,8 @@ import { Notice, Platform, Plugin, type SecretStorage, TFile, TFolder, type Vaul
 import { runCapability } from "./commands/capability.ts";
 import { runConnect } from "./commands/connect.ts";
 import { runDownload } from "./commands/download.ts";
+import { runEnterReceipt } from "./commands/enter-receipt.ts";
+import { runEvents } from "./commands/events.ts";
 import { runRemoveCredential } from "./commands/remove-credential.ts";
 import { runUpload } from "./commands/upload.ts";
 import type { CommandContext, PlatformInfo, SecretStore, VaultWriter } from "./context.ts";
@@ -74,6 +76,20 @@ export default class FolioSpindleProofPlugin extends Plugin {
 			name: "Download fixtures from receipt",
 			callback: () => {
 				void runDownload(this.context());
+			},
+		});
+		this.addCommand({
+			id: "enter-receipt",
+			name: "Enter demo receipt",
+			callback: () => {
+				void runEnterReceipt(this.context());
+			},
+		});
+		this.addCommand({
+			id: "observe-events",
+			name: "Observe object events",
+			callback: () => {
+				void runEvents(this.context());
 			},
 		});
 		this.onloadMs = clock() - t0;
